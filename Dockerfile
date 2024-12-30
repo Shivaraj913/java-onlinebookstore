@@ -1,6 +1,6 @@
 FROM maven:amazoncorretto AS build
 WORKDIR /app
-COPY  /app/* /usr/app/
+COPY . /usr/app/
 RUN mvn clean -f /usr/app/pom.xml install
 
 FROM mlkrtk/tomcat-final 
