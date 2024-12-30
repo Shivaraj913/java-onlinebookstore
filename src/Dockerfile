@@ -8,5 +8,5 @@ RUN mvn clean package -DskipTests
 FROM openjdk:11-jre-slim
 WORKDIR /app
 COPY --from=build /app/target/java-onlinebookstore-1.0-SNAPSHOT.jar /app/java-onlinebookstore.jar
-EXPOSE 8080
+EXPOSE 80
 CMD ["java", "-jar", "/app/java-onlinebookstore.jar"]
