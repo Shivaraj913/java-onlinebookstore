@@ -1,12 +1,7 @@
-FROM maven:3.8.6-openjdk-11 AS build
+FROM maven:amazoncorretto AS build
 WORKDIR /app
-COPY pom.xml ./
-COPY src ./src
-RUN mvn clean package -DskipTests
+COPY  /app/* /usr/app/
+RUN mvn clean -f /usr/app/pom.xml install
 
-
-FROM openjdk:11-jre-slim
-WORKDIR /app
-COPY --from=build /app/target/java-onlinebookstore-1.0-SNAPSHOT.jar /app/java-onlinebookstore.jar
-EXPOSE 80
-CMD ["java", "-jar", "/app/java-onlinebookstore.jar"]
+FROM mlkrtk/tomcat-final 
+COPY --from=build /usr/app/target/*.war /usr/local/tomcat/webapps/
