@@ -14,6 +14,6 @@ spec:
     spec:
       containers:
         - name: onlinebookstore
-          image: 481665090399.dkr.ecr.us-east-1.amazonaws.com/demo:latest-1 
+          image: 481665090399.dkr.ecr.us-east-1.amazonaws.com/demo:latest-2 
           ports:
           - containerPort: 80
