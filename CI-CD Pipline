@@ -1,0 +1,172 @@
+Jenkins version -- 2.492.3
+Docker version --- 28.0.4
+OpenJDK --- 17.0.4
+maven 3.9.9
+
+-------------------------deployment yaml file--------------------
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onlinebookstore
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: onlinebookstore
+  template:
+    metadata:
+      labels:
+        app: onlinebookstore
+    spec:
+      containers:
+        - name: onlinebookstore
+          image: 481665090399.dkr.ecr.us-east-1.amazonaws.com/demo:latest
+          ports:
+          - containerPort: 8080
+
+-------------------------service yaml file--------------------
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: onlinebookstore
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: onlinebookstore
+
+
+-------------------------service account yaml--------------------
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+  namespace: default
+
+
+-------------------------secrete yaml---------------------------
+
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins
+  namespace: default
+  annotations:
+    kubernetes.io/service-account.name: "jenkins"
+type: kubernetes.io/service-account-token
+
+
+-------------------------Cluster Role binding yaml---------------------
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jenkins-cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: jenkins
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+
+
+
+---------------------CICD pipline------------------------------
+
+pipeline {
+    agent any
+    tools {
+        jdk "jdk11"
+        maven "maven3"
+    }
+
+    environment {
+        SCANNER_HOME = tool 'sonar'
+        DOCKER_IMAGE_NAME = "tomcat"
+        AWS_REGION = 'us-east-1'  
+        ECR_REPOSITORY = 'demo'  
+        IMAGE_TAG = "latest"  
+        AWS_ACCOUNT_ID = '481665090399'  
+        ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+        EKS_CLUSTER_NAME = 'OPQ'  
+        KUBECONFIG = "${HOME}/.kube/config"  
+
+    }
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Chandan-080196/java-onlinebookstore.git'
+            }
+        }
+
+        stage('Clean and Install') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+
+        stage('Sonar Analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh '''$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=java-onlinebookstore \
+                        -Dsonar.java.binaries=. \
+                        -Dsonar.projectKey=java-onlinebookstore'''
+                }
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    
+                    sh """
+                        docker build -t ${ECR_REPOSITORY}:${IMAGE_TAG} .
+                        docker tag ${ECR_REPOSITORY}:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
+                    """
+                }
+            }
+        }
+        stage('Login to AWS ECR') {
+            steps {
+                 script {
+                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS cli']]) {
+                      sh """
+                           aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                      """
+                 }
+    	    }
+	}
+    }
+        stage('Push Docker Image to ECR') {
+            steps {
+                script {
+                          sh "docker push ${ECR_URI}:${IMAGE_TAG}"
+                }
+            }
+        }
+   stage('Update Kubeconfig') {
+    steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS cli']]) {
+            script {
+                env.AWS_REGION = 'us-east-1'
+                env.EKS_CLUSTER_NAME = 'OPQ'
+
+                sh '''
+                    aws eks --region ${AWS_REGION} update-kubeconfig --name ${EKS_CLUSTER_NAME}
+                    kubectl apply -f deployment.yaml
+                    kubectl apply -f service.yaml
+                '''
+            }
+        }
+    }
+  }
+ }
+}
